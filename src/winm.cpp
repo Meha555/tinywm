@@ -468,8 +468,10 @@ void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {
 void WindowManager::errorHandler(xcb_generic_error_t *error,
                                  const char *message) const noexcept {
     if (error) {
-        fprintf(stderr, "ERROR: can't %s : %d\n", message, error->error_code);
-        LOG(ERROR) << "can't " << message;
+        // fprintf(stderr, "ERROR: can't %s : %d\n", message,
+        // error->error_code);
+        LOG(ERROR) << "can't " << message << " : error-code "
+                   << error->error_code;
         xcb_disconnect(conn);
         free(error);
         exit(EXIT_FAILURE);
@@ -479,8 +481,10 @@ void WindowManager::errorHandler(xcb_generic_error_t *error,
 void WindowManager::errorHandler(xcb_void_cookie_t cookie,
                                  const char *message) const noexcept {
     if (auto error = xcb_request_check(conn, cookie)) {
-        fprintf(stderr, "ERROR: can't %s : %d\n", message, error->error_code);
-        LOG(ERROR) << "can't " << message;
+        // fprintf(stderr, "ERROR: can't %s : %d\n", message,
+        // error->error_code);
+        LOG(ERROR) << "can't " << message << " : error-code "
+                   << error->error_code;
         free(error);
         exit(EXIT_FAILURE);
     }
