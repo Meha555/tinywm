@@ -31,22 +31,30 @@ static void print_modifiers(uint32_t mask) {
 namespace x11 {
 
 ::std::atomic<bool> WindowManager::wm_detected_;
+::std::mutex WindowManager::wm_mutex_;
+WindowManager *WindowManager::instance_ = nullptr;
 
 ::std::unique_ptr<WindowManager>
 WindowManager::getInstance(const ::std::string &display_name) {
-    const char *display_c_str =
-        display_name.empty() ? nullptr : display_name.c_str();
-    xcb_connection_t *c = xcb_connect(display_c_str, NULL);
-    if (c == nullptr || xcb_connection_has_error(c) != 0) {
-        LOG(ERROR) << "Failed to open X connection ";
-        return nullptr;
+    if (instance_ == nullptr) {
+        ::std::lock_guard<::std::mutex> guard(wm_mutex_);
+        if (instance_ == nullptr) {
+            const char *display_c_str =
+                display_name.empty() ? nullptr : display_name.c_str();
+            xcb_connection_t *c = xcb_connect(display_c_str, NULL);
+            if (c == nullptr || xcb_connection_has_error(c) != 0) {
+                LOG(ERROR) << "Failed to open X connection ";
+                return nullptr;
+            }
+            xcb_screen_t *s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+            instance_ = new WindowManager(c, s);
+        }
     }
-    xcb_screen_t *s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
-
-    return ::std::unique_ptr<WindowManager>(new WindowManager(c, s));
+    return ::std::unique_ptr<WindowManager>(instance_);
 }
-WindowManager::WindowManager(xcb_connection_t *c, const xcb_screen_t *s)
-    : conn(c), root(s->root) {}
+
+WindowManager::WindowManager(xcb_connection_t *c, xcb_screen_t *s)
+    : conn(c), screen(s), root(s->root) {}
 
 WindowManager::~WindowManager() { xcb_disconnect(conn); }
 
@@ -65,11 +73,9 @@ void WindowManager::run() {
     // TODO -
     // 注册错误处理函数(xcb好像没有这个功能)，貌似都是在checked后缀的函数对应的xcb_request_check处理了
 
+    errorHandler(xcb_grab_server_checked(conn), "grab X Server");
+    
     xcb_generic_error_t *error = nullptr;
-
-    error = xcb_request_check(conn, xcb_grab_server_checked(conn));
-    errorHandler(error, "grab X Server");
-
     xcb_query_tree_reply_t *result_tree =
         xcb_query_tree_reply(conn, xcb_query_tree(conn, root), &error);
     errorHandler(error, "query for window tree");

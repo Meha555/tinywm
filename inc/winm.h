@@ -19,8 +19,8 @@ public:
     static ::std::unique_ptr<WindowManager>
     getInstance(const ::std::string &display_name = "");
 
-    WindowManager(WindowManager &&wm) noexcept;
-    WindowManager &operator=(WindowManager &&wm) noexcept;
+    WindowManager(WindowManager &&wm) noexcept = delete;
+    WindowManager &operator=(WindowManager &&wm) noexcept = delete;
 
     WindowManager(const WindowManager &wm) = delete;
     WindowManager &operator=(const WindowManager &wm) = delete;
@@ -29,7 +29,7 @@ public:
     void run();
 
 private:
-    explicit WindowManager(xcb_connection_t *c, const xcb_screen_t *s);
+    explicit WindowManager(xcb_connection_t *c, xcb_screen_t *s);
     // Reparenting/Framing
     /***
      * @description: Frame a window
@@ -84,7 +84,8 @@ private:
     const xcb_window_t root;
     ::std::unordered_map<xcb_window_t, xcb_window_t> clients;
     static ::std::atomic<bool> wm_detected_;
-    static ::std::mutex wm_detected_mutex_;
+    static ::std::mutex wm_mutex_;
+    static WindowManager *instance_;
 };
 
 } // namespace x11
