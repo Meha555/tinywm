@@ -5,30 +5,34 @@ extern "C" {
 #include <xcb/xcb.h>
 }
 #include <ostream>
+#include <sstream>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 // Declarations
 namespace utils {
 
-template <typename T> struct Size {
+template <typename T = int16_t> struct Size {
     T width, height;
     Size() = default;
     Size(T w, T h) : width(w), height(h) {}
     ::std::string toString() const;
 };
 
-template <typename T> struct Coordinate {
+template <typename T = int16_t> struct Position {
     T x, y;
-    Coordinate() = default;
-    Coordinate(T _x, T _y) : x(_x), y(_y) {}
+    Position() = default;
+    Position(T _x, T _y) : x(_x), y(_y) {}
     ::std::string toString() const;
 };
 
-template <typename T> struct Vector2D {
+template <typename T = int16_t> struct Vector2D {
     T x, y;
     Vector2D() = default;
     Vector2D(T _x, T _y) : x(_x), y(_y) {}
     ::std::string toString() const;
+    static T haha;
 };
 
 } // namespace utils
@@ -41,7 +45,7 @@ template <typename T>::std::string Size<T>::toString() const {
     out << width << 'x' << height;
     return out.str();
 }
-template <typename T>::std::string Coordinate<T>::toString() const {
+template <typename T>::std::string Position<T>::toString() const {
     ::std::ostringstream out;
     out << "(" << x << ", " << y << ")";
     return out.str();
@@ -63,23 +67,23 @@ template <typename T>
 }
 
 template <typename T>
-Vector2D<T> operator-(const Coordinate<T> &a, const Coordinate<T> &b) {
+Vector2D<T> operator-(const Position<T> &a, const Position<T> &b) {
 	return Vector2D<T>(a.x - b.x, a.y - b.y);
 }
 
 template <typename T>
-Coordinate<T> operator+(const Coordinate<T> &a, const Vector2D<T> &v) {
-    return Coordinate<T>(a.x + v.x, a.y + v.y);
+Position<T> operator+(const Position<T> &a, const Vector2D<T> &v) {
+    return Position<T>(a.x + v.x, a.y + v.y);
 }
 
 template <typename T>
-Coordinate<T> operator+(const Vector2D<T> &v, const Coordinate<T> &a) {
-    return Coordinate<T>(a.x + v.x, a.y + v.y);
+Position<T> operator+(const Vector2D<T> &v, const Position<T> &a) {
+    return Position<T>(a.x + v.x, a.y + v.y);
 }
 
 template <typename T>
-Coordinate<T> operator-(const Coordinate<T> &a, const Vector2D<T> &v) {
-    return Coordinate<T>(a.x - v.x, a.y - v.y);
+Position<T> operator-(const Position<T> &a, const Vector2D<T> &v) {
+    return Position<T>(a.x - v.x, a.y - v.y);
 }
 
 template <typename T>

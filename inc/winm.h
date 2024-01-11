@@ -26,7 +26,7 @@ public:
     WindowManager &operator=(const WindowManager &wm) = delete;
 
     // Event loop
-    [[noreturn]] void run();
+    void run();
 
 private:
     explicit WindowManager(xcb_connection_t *c, const xcb_screen_t *s);
@@ -37,7 +37,7 @@ private:
      * @param {bool} does the window was created before wm
      * @return {*}
      */
-    void addFrame(xcb_window_t* w, bool created_before);
+    void addFrame(xcb_window_t w, bool created_before);
     /***
      * @description: UnFrame a window
      * @param {xcb_window_t} window to be framed
@@ -46,40 +46,43 @@ private:
     void unFrame(xcb_window_t w);
 
     // Callbacks
-    void onCreateNotify(const xcb_create_notify_event_t &e) const;
-    void onDestroyNotify(const xcb_destroy_notify_event_t &e) const;
-    void onConfigureRequest(const xcb_configure_request_event_t &e) const;
-    void onConfigureNotify(const xcb_configure_notify_event_t &e) const;
-    void onMapRequest(const xcb_map_request_event_t &e) const;
-    void onMapNotify(const xcb_map_notify_event_t &e) const;
-    void onUnmapNotify(const xcb_unmap_notify_event_t &e) const;
-    void onReparentNotify(const xcb_reparent_notify_event_t &e) const;
-    void onResizeRequest(const xcb_resize_request_event_t &e) const;
-    void onExpose(const xcb_expose_event_t &e) const;
+    void onCreateNotify(xcb_create_notify_event_t *ev);
+    void onDestroyNotify(xcb_destroy_notify_event_t *ev);
+    void onConfigureRequest(xcb_configure_request_event_t *ev);
+    void onConfigureNotify(xcb_configure_notify_event_t *ev);
+    void onMapRequest(xcb_map_request_event_t *ev);
+    void onMapNotify(xcb_map_notify_event_t *ev);
+    void onUnmapNotify(xcb_unmap_notify_event_t *ev);
+    void onReparentNotify(xcb_reparent_notify_event_t *ev);
+    void onMotionNotify(xcb_motion_notify_event_t *ev);
+    void onEnterNotify(xcb_enter_notify_event_t *ev);
+    void onLeaveNotify(xcb_leave_notify_event_t *ev);
 
-    void onFocusIn(const xcb_focus_in_event_t &e) const;
-    void onFocusOut(const xcb_focus_out_event_t &e) const;
-    void onButtonPress(const xcb_button_press_event_t &e) const;
-    void onButtonRelease(const xcb_button_release_event_t &e) const;
-    void onKeyPress(const xcb_key_press_event_t &e) const;
-    void onKeyRelease(const xcb_key_release_event_t &e) const;
-    void onMotionNotify(const xcb_motion_notify_event_t &e) const;
-    void onEnterNotify(const xcb_enter_notify_event_t &e) const;
-    void onLeaveNotify(const xcb_leave_notify_event_t &e) const;
+    void onExpose(xcb_expose_event_t *ev);
+    void onResizeRequest(xcb_resize_request_event_t *ev);
+    void onFocusIn(xcb_focus_in_event_t *ev);
+    void onFocusOut(xcb_focus_out_event_t *ev);
+    void onButtonPress(xcb_button_press_event_t *ev);
+    void onButtonRelease(xcb_button_release_event_t *ev);
+    void onKeyPress(xcb_key_press_event_t *ev);
+    void onKeyRelease(xcb_key_release_event_t *ev);
 
-    static uint8_t onXError(xcb_connection_t *c, xcb_generic_error_t *e);
-    static uint8_t onWMDetected(xcb_connection_t *c, xcb_generic_error_t *e);
+    void errorHandler(xcb_generic_error_t *error,
+                      const char *message) const noexcept;
+    void errorHandler(xcb_void_cookie_t cookie,
+                      const char *message) const noexcept;
+    void onWMDetected(xcb_connection_t *c, xcb_generic_error_t *e);
     // Geometerys
-    utils::Coordinate<uint16_t> drag_start_pos_;
-    utils::Coordinate<uint16_t> drag_start_frame_pos_;
-    utils::Size<uint16_t> drag_start_frame_size_;
+    utils::Position<int16_t> drag_start_pos_;
+    utils::Position<int16_t> drag_start_frame_pos_;
+    utils::Size<int16_t> drag_start_frame_size_;
 
     // Attributes
     // const xcb_atom_t XCB_PROPERTY_DELETE;
     xcb_connection_t *conn;
     xcb_screen_t *screen;
     const xcb_window_t root;
-    ::std::unordered_map<xcb_window_t, xcb_window_t> clients_;
+    ::std::unordered_map<xcb_window_t, xcb_window_t> clients;
     static ::std::atomic<bool> wm_detected_;
     static ::std::mutex wm_detected_mutex_;
 };
