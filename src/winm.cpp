@@ -70,10 +70,10 @@ WindowManager::~WindowManager() { xcb_disconnect(conn); }
 void WindowManager::run() {
   // REVIEW - 为什么需要加锁？？
   //   wm_detected_.store(false);
-  const static uint32_t values[] = {XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-                                    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY};
-  errorHandler(xcb_change_window_attributes_checked(conn, root,
-                                                    XCB_CW_EVENT_MASK, values),
+  errorHandler(xcb_change_window_attributes_checked(
+                   conn, root, XCB_CW_EVENT_MASK,
+                   (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+                                      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY}),
                "WM register substructure redirection on root window");
   xcb_flush(conn);
   //   if (wm_detected_.load()) {
@@ -217,12 +217,10 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   values[1] = static_cast<uint32_t>(Colors::BORDER_COLOR);
   // REVIEW -
   // 实测frame不能添加事件，否则由于其比client更大一些，导致事件会先经过frame的处理，导致断言失败
-  values[2] =  
-  XCB_EVENT_MASK_KEY_RELEASE |
-               XCB_EVENT_MASK_KEY_PRESS |
-      XCB_EVENT_MASK_EXPOSURE |
-      XCB_EVENT_MASK_BUTTON_PRESS |
-      XCB_EVENT_MASK_BUTTON_RELEASE;// |
+  values[2] =
+      // XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_KEY_PRESS |
+      //             XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS |
+      //             XCB_EVENT_MASK_BUTTON_RELEASE |
       XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
   errorHandler(xcb_create_window_checked(
                    conn, result_geo->depth, frame, root, result_geo->x,
@@ -255,19 +253,28 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   clients_[w] = frame;
   // 6. Grab universal window management actions on client window.
   // 6.1 Move windows with alt + left button.
-  errorHandler(xcb_grab_button_checked(conn, 0, w, 0, XCB_GRAB_MODE_ASYNC,
-                                       XCB_GRAB_MODE_ASYNC, w, XCB_NONE,
-                                       XCB_BUTTON_INDEX_1, XCB_MOD_MASK_1),
-               "grab button1");
+  errorHandler(xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
+                                       XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC,
+                                       XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1,
+                                       XCB_MOD_MASK_1),
+               "grab alt + button1");
   // 6.2  Resize windows with alt + right button.
-  errorHandler(xcb_grab_button_checked(conn, 0, w, 0, XCB_GRAB_MODE_ASYNC,
-                                       XCB_GRAB_MODE_ASYNC, w, XCB_NONE,
-                                       XCB_BUTTON_INDEX_3, XCB_MOD_MASK_3),
-               "grab button3");
-  // 6.3 Kill windows with alt + f4.
-  // TODO - 不会xcb的键盘
+  errorHandler(
+      xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
+                              XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w,
+                              XCB_NONE, XCB_BUTTON_INDEX_3, XCB_MOD_MASK_3),
+      "grab alt + button3");
+  // 6.3 Kill windows with alt + middle button
+  errorHandler(
+      xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
+                              XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w,
+                              XCB_NONE, XCB_BUTTON_INDEX_3, XCB_MOD_MASK_2),
+      "grab alt + button2");
   // errorHandler(xcb_ungrab_key_checked(conn, xcb_keycode_), "grab key");
-  // 6.4 Switch windows with alt + tab.
+  // 6.4 Switch windows with ctrl.
+  errorHandler(xcb_grab_key_checked(conn, 1, w, XCB_MOD_MASK_CONTROL, XCB_NONE,
+                                    XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC),
+               "grab ctrl");
   LOG(INFO) << "Framed window " << w << " [" << frame << "]";
 }
 
