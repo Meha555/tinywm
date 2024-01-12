@@ -4,7 +4,7 @@ set -e
 
 # 1. Build binary.
 cmake -S . -B build
-cmake --build build -j`nproc`
+cmake --build build -j `nproc`
 
 # 2. Run.
 #
