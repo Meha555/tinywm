@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "utils.hpp"
+
 extern "C" {
 #include <X11/Xutil.h>
 #include <xcb/bigreq.h>
@@ -201,6 +203,7 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   if (created_before &&
       (result_attr->override_redirect == XCB_CW_OVERRIDE_REDIRECT ||
        result_attr->map_state != XCB_MAP_STATE_VIEWABLE)) {
+    free(result_attr);
     return;
   }
   free(result_attr);
@@ -253,23 +256,29 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   clients_[w] = frame;
   // 6. Grab universal window management actions on client window.
   // 6.1 Move windows with alt + left button.
-  errorHandler(xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
-                                       XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC,
-                                       XCB_NONE, XCB_NONE, XCB_BUTTON_INDEX_1,
-                                       XCB_MOD_MASK_1),
+  errorHandler(xcb_grab_button_checked(
+                   conn, 0, w,
+                   XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+                       XCB_EVENT_MASK_BUTTON_MOTION,
+                   XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, XCB_NONE, XCB_NONE,
+                   XCB_BUTTON_INDEX_1, XCB_MOD_MASK_1),
                "grab alt + button1");
   // 6.2  Resize windows with alt + right button.
-  errorHandler(
-      xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
-                              XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w,
-                              XCB_NONE, XCB_BUTTON_INDEX_3, XCB_MOD_MASK_3),
-      "grab alt + button3");
+  errorHandler(xcb_grab_button_checked(
+                   conn, 0, w,
+                   XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+                       XCB_EVENT_MASK_BUTTON_MOTION,
+                   XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w, XCB_NONE,
+                   XCB_BUTTON_INDEX_3, XCB_MOD_MASK_1),
+               "grab alt + button3");
   // 6.3 Kill windows with alt + middle button
-  errorHandler(
-      xcb_grab_button_checked(conn, 0, w, XCB_EVENT_MASK_BUTTON_PRESS,
-                              XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w,
-                              XCB_NONE, XCB_BUTTON_INDEX_3, XCB_MOD_MASK_2),
-      "grab alt + button2");
+  errorHandler(xcb_grab_button_checked(
+                   conn, 0, w,
+                   XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+                       XCB_EVENT_MASK_BUTTON_MOTION,
+                   XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, w, XCB_NONE,
+                   XCB_BUTTON_INDEX_2, XCB_MOD_MASK_1),
+               "grab alt + button2");
   // errorHandler(xcb_ungrab_key_checked(conn, xcb_keycode_), "grab key");
   // 6.4 Switch windows with ctrl.
   errorHandler(xcb_grab_key_checked(conn, 1, w, XCB_MOD_MASK_CONTROL, XCB_NONE,
@@ -302,7 +311,18 @@ void WindowManager::onConfigureNotify(xcb_configure_notify_event_t *ev) {}
 
 void WindowManager::onMapNotify(xcb_map_notify_event_t *ev) {}
 
-void WindowManager::onUnmapNotify(xcb_unmap_notify_event_t *ev) {}
+void WindowManager::onUnmapNotify(xcb_unmap_notify_event_t *ev) {
+  if (!clients_.count(ev->window)) {
+    LOG(INFO) << "Ignore UnmapNotify for non-client window " << ev->window;
+    return;
+  }
+  if (ev->event == root) {
+    LOG(INFO) << "Ignore UnmapNotify for reparented pre-existing window "
+              << ev->window;
+    return;
+  }
+  unFrame(ev->window);
+}
 
 void WindowManager::onReparentNotify(xcb_reparent_notify_event_t *ev) {}
 
@@ -321,24 +341,28 @@ void WindowManager::onConfigureRequest(xcb_configure_request_event_t *ev) {
   CHECK(clients_.count(ev->window));
   // If client want to configure, sure it will be fine.
   // But we need to configure its frame first.
-  const uint32_t values[] = {static_cast<uint32_t>(ev->x),
-                             static_cast<uint32_t>(ev->y),
-                             ev->width,
-                             ev->height,
-                             ev->border_width,
-                             ev->sibling,
-                             ev->stack_mode};
-
+  uint16_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+                  XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
+                  XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_SIBLING |
+                  XCB_CONFIG_WINDOW_STACK_MODE;
+  const uint32_t values[] = {
+      static_cast<uint32_t>(ev->x),
+      static_cast<uint32_t>(ev->y),
+      ev->width,
+      ev->height,
+      ev->border_width,
+      ev->sibling,
+      ev->stack_mode,
+  };
   if (clients_.count(ev->window)) {
-    errorHandler(xcb_configure_window_checked(conn, clients_[ev->window],
-                                              ev->value_mask, values),
-                 "configure frame");
+    errorHandler(
+        xcb_configure_window_checked(conn, clients_[ev->window], mask, values),
+        "configure frame"); /*ev->value_mask*/
     LOG(INFO) << "Resize Frame [" << clients_[ev->window] << "] to "
               << Size<uint16_t>(ev->width, ev->height);
   }
-  errorHandler(
-      xcb_configure_window_checked(conn, ev->window, ev->value_mask, values),
-      "configure window");
+  errorHandler(xcb_configure_window_checked(conn, ev->window, mask, values),
+               "configure window"); /*ev->value_mask*/
   LOG(INFO) << "Resize Window [" << clients_[ev->window] << "] to "
             << Size<uint16_t>(ev->width, ev->height);
 }
@@ -348,7 +372,7 @@ void WindowManager::onMapRequest(xcb_map_request_event_t *ev) {
   // If client want to map, sure it will be fine.
   // And we must frame and reparent it first.
   addFrame(ev->window, false);
-  xcb_void_cookie_t cookie_map = xcb_map_window_checked(conn, ev->window);
+  errorHandler(xcb_map_window_checked(conn, ev->window), "map window");
 }
 
 void WindowManager::onResizeRequest(xcb_resize_request_event_t *ev) {
@@ -446,57 +470,58 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
   const Position<int16_t> drag_pos(ev->root_x, ev->root_y);
   const Vector2D<int16_t> delta = drag_pos - drag_start_pos_;
   // 3. Check the pressed keys.
-  xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
-  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
-  switch (ev->response_type & ~0x80) {
-    case XCB_KEY_PRESS: {
-      // alt + left button: Move window.
-      if (is_alt_pressed && ev->detail == XCB_BUTTON_INDEX_1) {
-        LOG(INFO) << "Alt+Mouse Left Click pressed";
-        // Move the frame, so its children will follow it.
-        // const Position<int16_t> dest_frame_pos = drag_start_frame_pos_ +
-        // delta; const static uint32_t values[] = {
-        //     static_cast<uint32_t>(dest_frame_pos.x),
-        //     static_cast<uint32_t>(dest_frame_pos.y)};
-        // errorHandler(xcb_configure_window_checked(conn, clients_[ev->child],
-        //                                           ev->state, values),
-        //              "move window");
-      } else if (is_alt_pressed &&
-                 ev->detail == XCB_BUTTON_INDEX_3) {  // alt + right button:
-                                                      // Resize window.
-        // auto cmp = [](int16_t a, int16_t b) -> int16_t {
-        //   return a > b ? a : b;
-        // };
-        // const Vector2D<int16_t> size_delta(
-        //     // ::std::max(delta.x, -drag_start_frame_size_.width),
-        //     // ::std::max(delta.y, -drag_start_frame_size_.height)
-        //     cmp(delta.x, -drag_start_frame_size_.width),
-        //     cmp(delta.y, -drag_start_frame_size_.height));
-        // const Size<int16_t> dest_frame_size =
-        //     drag_start_frame_size_ + size_delta;
-        // // Resize frame.
-        // const uint32_t values[] = {
-        //     static_cast<uint32_t>(dest_frame_size.width),
-        //     static_cast<uint32_t>(dest_frame_size.height)};
-        // errorHandler(
-        //     xcb_configure_window_checked(
-        //         conn, clients_[ev->child],
-        //         XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
-        //         values),
-        //     "resize window");
-        // // Resize client.
-        // errorHandler(
-        //     xcb_configure_window_checked(
-        //         conn, ev->child,
-        //         XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
-        //         values),
-        //     "resize window");
-      }
-      break;
-    }
-    default:
-      LOG(INFO) << "Unknown Keys pressed";
+  // Move the frame, so its children will follow it.
+  if (ev->state & XCB_BUTTON_MASK_1) {
+    LOG(INFO) << "Alt+Mouse Left Click pressed";
+    const Position<int16_t> dest_frame_pos = drag_start_frame_pos_ + delta;
+    const static uint32_t values[] = {static_cast<uint32_t>(dest_frame_pos.x),
+                                      static_cast<uint32_t>(dest_frame_pos.y)};
+    errorHandler(xcb_configure_window_checked(conn, clients_[ev->child],
+                                              ev->state, values),
+                 "move window");
+  } else if (ev->state & XCB_BUTTON_MASK_3) {
+    LOG(INFO) << "Alt+Mouse Right Click pressed";
+    auto cmp = [](int16_t a, int16_t b) -> int16_t { return a > b ? a : b; };
+    const Vector2D<int16_t> size_delta(
+        // ::std::max(delta.x, -drag_start_frame_size_.width),
+        // ::std::max(delta.y, -drag_start_frame_size_.height)
+        cmp(delta.x, -drag_start_frame_size_.width),
+        cmp(delta.y, -drag_start_frame_size_.height));
+    const Size<int16_t> dest_frame_size = drag_start_frame_size_ + size_delta;
+    // Resize frame.
+    const uint32_t values[] = {static_cast<uint32_t>(dest_frame_size.width),
+                               static_cast<uint32_t>(dest_frame_size.height)};
+    errorHandler(
+        xcb_configure_window_checked(
+            conn, clients_[ev->child],
+            XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values),
+        "resize window");
+    // Resize client.
+    errorHandler(
+        xcb_configure_window_checked(
+            conn, ev->child,
+            XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values),
+        "resize window");
   }
+
+  // xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
+  // xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
+  // switch (ev->response_type & ~0x80) {
+  //   case XCB_KEY_PRESS: {
+  //     // alt + left button: Move window.
+  //     if (is_alt_pressed && ev->detail == XCB_BUTTON_INDEX_1) {
+  //       LOG(INFO) << "Alt+Mouse Left Click pressed";
+
+  //     } else if (is_alt_pressed &&
+  //                ev->detail == XCB_BUTTON_INDEX_3) {  // alt + right button:
+  //                                                     // Resize window.
+
+  //     }
+  //     break;
+  //   }
+  //   default:
+  //     LOG(INFO) << "Unknown Keys pressed";
+  // }
 }
 
 void WindowManager::onEnterNotify(xcb_enter_notify_event_t *ev) {
@@ -514,15 +539,30 @@ void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {
   print_modifiers(ev->state);
 
   // alt + f4: Close window.
-  // if((ev->detail & XCB_MOD_MASK_1) && (ev->detail))
-  // TODO - 不会用XCB获取键盘按键，官方文档没写，代码注释也没有
-
-  // TODO - 实现通过属性和原子来让窗管控制窗口关闭的逻辑
-  if (ev->detail == static_cast<uint16_t>(KeyMap::ESC)) {
-    errorHandler(xcb_destroy_window_checked(conn, ev->event), "destroy window");
-    free(ev);
-    xcb_disconnect(conn);
+  xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
+  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
+  if (ev->detail == XCB_MOD_MASK_CONTROL) {
+    // 1. Find next window.
+    auto i = clients_.find(ev->child);
+    CHECK(i != clients_.end());
+    ++i;  // Get next iterator of current window
+    if (i == clients_.end()) i = clients_.begin();
+    // 2. Raise and set focus.
+    errorHandler(xcb_configure_window_checked(
+                     conn, ev->child, XCB_CONFIG_WINDOW_STACK_MODE,
+                     (const uint32_t[]){XCB_STACK_MODE_ABOVE}),
+                 "raise to top");
+    errorHandler(xcb_set_input_focus_checked(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
+                                             i->first, XCB_CURRENT_TIME),
+                 "set input focus");
   }
+
+  // // TODO - 实现通过属性和原子来让窗管控制窗口关闭的逻辑
+  // if (ev->detail == static_cast<uint16_t>(KeyMap::ESC)) {
+  //   errorHandler(xcb_destroy_window_checked(conn, ev->event), "destroy window");
+  //   free(ev);
+  //   xcb_disconnect(conn);
+  // }
 }
 
 void WindowManager::errorHandler(xcb_generic_error_t *error,
