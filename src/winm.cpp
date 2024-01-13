@@ -195,14 +195,14 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   uint32_t mask;
   uint32_t values[3];
   mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK;
-  values[0] = static_cast<uint32_t>(Colors::BG_COLOR);  // screen->black_pixel
-  values[1] = static_cast<uint32_t>(Colors::BORDER_COLOR);
+  values[0] = static_cast<uint32_t>(Colors::GREEN);
+  values[1] = static_cast<uint32_t>(Colors::GREY);
   // REVIEW -
   // 实测frame不能添加事件，否则由于其比client更大一些，导致事件会先经过frame的处理，导致断言失败
   values[2] =
-      // XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_KEY_PRESS |
-      //             XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_BUTTON_PRESS |
-      //             XCB_EVENT_MASK_BUTTON_RELEASE |
+      // XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
+      XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
+      XCB_EVENT_MASK_EXPOSURE | 
       XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
   errorHandler(xcb_create_window_checked(
                    conn, result_geo->depth, frame, root, result_geo->x,
@@ -264,6 +264,7 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   errorHandler(xcb_grab_key_checked(conn, 1, w, XCB_MOD_MASK_CONTROL, XCB_NONE,
                                     XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC),
                "grab ctrl");
+  xcb_flush(conn);
   LOG(INFO) << "Framed window " << w << " [" << frame << "]";
 }
 
@@ -280,6 +281,7 @@ void WindowManager::unFrame(xcb_window_t w) {
   // 4. Destroy frame.
   errorHandler(xcb_destroy_window_checked(conn, clients_[w]), "destroy frame");
   clients_.erase(w);
+  xcb_flush(conn);
   LOG(INFO) << "Unframed window " << w << " [" << clients_[w] << "]";
 }
 
@@ -307,11 +309,6 @@ void WindowManager::onUnmapNotify(xcb_unmap_notify_event_t *ev) {
 void WindowManager::onReparentNotify(xcb_reparent_notify_event_t *ev) {}
 
 void WindowManager::onExpose(xcb_expose_event_t *ev) {
-  printf(
-      "Window %u exposed. Region to be redrawn at location "
-      "(%d,%d), with dimension (%d,%d)\n",
-      ev->window, ev->x, ev->y, ev->width, ev->height);
-
   xcb_generic_error_t *error = nullptr;
   // xcb_intern_atom_reply_t *result_atom = xcb_intern_atom_reply(
   //     conn,
@@ -322,12 +319,27 @@ void WindowManager::onExpose(xcb_expose_event_t *ev) {
       xcb_get_property(conn, 0, ev->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING,
                        0, 64),
       &error);
-  const char *text =
-      static_cast<const char *>(xcb_get_property_value(result_prop));
+  errorHandler(error, "get window name");
+  const char *text = nullptr;
   // free(result_atom);
   free(result_prop);
-  errorHandler(error, "get window geometry");
-  text_draw(conn, screen, ev->window, 10, 0, text);
+  if(!clients_.count(ev->window)) {
+    text = static_cast<const char *>(xcb_get_property_value(result_prop));
+    button_draw(conn, screen, ev->window, (ev->width - 7 * strlen(text)) / 2,
+                (ev->height - 16) / 2, text);
+    LOG(WARNING) << text ;
+    text = "Press ESC key to exit...";
+    text_draw(conn, screen, ev->window, 10, ev->height - 10, text);
+    // text_draw(conn, screen, clients_[ev->window], (ev->x + ev->width) >> 1, (ev->y + ev->height) >> 1, text);
+    xcb_rectangle_t btn = {(ev->x + ev->width) >> 1, (ev->y + ev->height) >> 1, 15, 15};//ev->x + 2 ev->y + ev->ev->width - 8
+            xcb_poly_fill_rectangle(conn, ev->window, xcb_generate_id(conn), 1, &btn);
+    LOG(WARNING) << text ;
+    xcb_flush(conn);
+  }
+  printf(
+      "Window %u [%s] exposed. Region to be redrawn at location "
+      "(%d,%d), with dimension (%d,%d)\n", ev->window, text,
+       ev->x, ev->y, ev->width, ev->height);
 }
 
 void WindowManager::onConfigureRequest(xcb_configure_request_event_t *ev) {
@@ -505,11 +517,23 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
 void WindowManager::onEnterNotify(xcb_enter_notify_event_t *ev) {
   printf("Mouse entered window %u, at coordinates (%d,%d)\n", ev->event,
          ev->event_x, ev->event_y);
+  // static int is_hand = 0;
+  // if ((ev->event_x >= (ev->width - 7 * length) / 2) &&
+  //     (ev->event_x <=
+  //       ((ev->width - 7 * length) / 2 + 7 * length + 6)) &&
+  //     (ev->event_y >= (ev->height - 16) / 2 - 19) &&
+  //     (ev->event_y <= ((ev->height - 16) / 2)))
+      // is_hand = 1 - is_hand;
+
+  // is_hand ? cursor_set(conn, screen, ev->window, 58)
+  //         : cursor_set(conn, screen, ev->window, 68);
+  cursor_set(conn, screen, ev->event, 58);
 }
 
 void WindowManager::onLeaveNotify(xcb_leave_notify_event_t *ev) {
   printf("Mouse left window %u, at coordinates (%d,%d)\n", ev->event,
          ev->event_x, ev->event_y);
+  cursor_set(conn, screen, ev->event, 68);
 }
 
 void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {

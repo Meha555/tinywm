@@ -7,7 +7,7 @@ xterm &
 #./event_demo.exe &
 #./font_demo.exe &
 #./pixmap_demo.exe &
-xclock &
+#xclock &
 xeyes &
 sleep 2 &&
 
