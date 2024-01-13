@@ -4,15 +4,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include "aux.h"
 #include "utils.hpp"
 
 extern "C" {
 #include <X11/Xutil.h>
-#include <xcb/bigreq.h>
-#include <xcb/xc_misc.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
-#include <xcb/xcbext.h>
 #include <xcb/xproto.h>
 }
 
@@ -20,35 +18,16 @@ extern "C" {
 
 using namespace utils;
 
-enum class KeyMap { ESC = 9 };
-enum class Colors : unsigned long {
-  BORDER_COLOR = 0x0000ff,  // 蓝色
-  BG_COLOR = 0xff0000,      // 黄色
-};
-
-bool is_alt_pressed = false;
-
-static void print_modifiers(uint32_t mask) {
-  const char **mod,
-      *mods[] = {"Shift",   "Lock",    "Ctrl",   "Alt",     "Mod2",
-                 "Mod3",    "Mod4",    "Mod5",   "Button1", "Button2",
-                 "Button3", "Button4", "Button5"};
-  printf("Modifier mask: ");
-  for (mod = mods; mask; mask >>= 1, mod++)
-    if (mask & 1) printf(*mod);
-  putchar('\n');
-}
-
 namespace x11 {
 
-::std::atomic<bool> WindowManager::wm_detected_;
-::std::mutex WindowManager::wm_mutex_;
+std::atomic<bool> WindowManager::wm_detected_;
+std::mutex WindowManager::wm_mutex_;
 WindowManager *WindowManager::instance_ = nullptr;
 
-::std::unique_ptr<WindowManager> WindowManager::getInstance(
-    const ::std::string &display_name) {
+std::unique_ptr<WindowManager> WindowManager::getInstance(
+    const std::string &display_name) {
   if (instance_ == nullptr) {
-    ::std::lock_guard<::std::mutex> guard(wm_mutex_);
+    std::lock_guard<std::mutex> guard(wm_mutex_);
     if (instance_ == nullptr) {
       const char *display_c_str =
           display_name.empty() ? nullptr : display_name.c_str();
@@ -61,7 +40,7 @@ WindowManager *WindowManager::instance_ = nullptr;
       instance_ = new WindowManager(c, s);
     }
   }
-  return ::std::unique_ptr<WindowManager>(instance_);
+  return std::unique_ptr<WindowManager>(instance_);
 }
 
 WindowManager::WindowManager(xcb_connection_t *c, xcb_screen_t *s)
@@ -233,8 +212,9 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
                "create frame");
   free(result_geo);
   // Configure window title
-  const ::std::string title = ::std::string("WID: ").append(toString(w));
+  const std::string title = std::string("WID: ").append(toString(w));
   const char title_icon[] = "XCB tinywm (iconified)";
+
   errorHandler(
       xcb_change_property(conn, XCB_PROP_MODE_REPLACE, frame, XCB_ATOM_WM_NAME,
                           XCB_ATOM_STRING, 8, title.length(), title.c_str()),
@@ -331,6 +311,23 @@ void WindowManager::onExpose(xcb_expose_event_t *ev) {
       "Window %u exposed. Region to be redrawn at location "
       "(%d,%d), with dimension (%d,%d)\n",
       ev->window, ev->x, ev->y, ev->width, ev->height);
+
+  xcb_generic_error_t *error = nullptr;
+  // xcb_intern_atom_reply_t *result_atom = xcb_intern_atom_reply(
+  //     conn,
+  //     xcb_intern_atom(conn, 1, strlen("XCB_ATOM_WM_NAME"),
+  //     "XCB_ATOM_WM_NAME"), &error);
+  xcb_get_property_reply_t *result_prop = xcb_get_property_reply(
+      conn,
+      xcb_get_property(conn, 0, ev->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING,
+                       0, 64),
+      &error);
+  const char *text =
+      static_cast<const char *>(xcb_get_property_value(result_prop));
+  // free(result_atom);
+  free(result_prop);
+  errorHandler(error, "get window geometry");
+  text_draw(conn, screen, ev->window, 10, 0, text);
 }
 
 void WindowManager::onConfigureRequest(xcb_configure_request_event_t *ev) {
@@ -483,8 +480,8 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
     LOG(INFO) << "Alt+Mouse Right Click pressed";
     auto cmp = [](int16_t a, int16_t b) -> int16_t { return a > b ? a : b; };
     const Vector2D<int16_t> size_delta(
-        // ::std::max(delta.x, -drag_start_frame_size_.width),
-        // ::std::max(delta.y, -drag_start_frame_size_.height)
+        // std::max(delta.x, -drag_start_frame_size_.width),
+        // std::max(delta.y, -drag_start_frame_size_.height)
         cmp(delta.x, -drag_start_frame_size_.width),
         cmp(delta.y, -drag_start_frame_size_.height));
     const Size<int16_t> dest_frame_size = drag_start_frame_size_ + size_delta;
@@ -503,25 +500,6 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
             XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values),
         "resize window");
   }
-
-  // xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
-  // xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
-  // switch (ev->response_type & ~0x80) {
-  //   case XCB_KEY_PRESS: {
-  //     // alt + left button: Move window.
-  //     if (is_alt_pressed && ev->detail == XCB_BUTTON_INDEX_1) {
-  //       LOG(INFO) << "Alt+Mouse Left Click pressed";
-
-  //     } else if (is_alt_pressed &&
-  //                ev->detail == XCB_BUTTON_INDEX_3) {  // alt + right button:
-  //                                                     // Resize window.
-
-  //     }
-  //     break;
-  //   }
-  //   default:
-  //     LOG(INFO) << "Unknown Keys pressed";
-  // }
 }
 
 void WindowManager::onEnterNotify(xcb_enter_notify_event_t *ev) {
@@ -541,6 +519,8 @@ void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {
   // alt + f4: Close window.
   xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
   xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
+  // After elimate the target window, the next window in the stacking order
+  // should get focus.
   if (ev->detail == XCB_MOD_MASK_CONTROL) {
     // 1. Find next window.
     auto i = clients_.find(ev->child);
@@ -559,9 +539,8 @@ void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {
 
   // // TODO - 实现通过属性和原子来让窗管控制窗口关闭的逻辑
   // if (ev->detail == static_cast<uint16_t>(KeyMap::ESC)) {
-  //   errorHandler(xcb_destroy_window_checked(conn, ev->event), "destroy window");
-  //   free(ev);
-  //   xcb_disconnect(conn);
+  //   errorHandler(xcb_destroy_window_checked(conn, ev->event), "destroy
+  //   window"); free(ev); xcb_disconnect(conn);
   // }
 }
 
@@ -571,9 +550,9 @@ void WindowManager::errorHandler(xcb_generic_error_t *error,
     // fprintf(stderr, "ERROR: can't %s : %d\n", message,
     // error->error_code);
     LOG(ERROR) << message << " failed. : " << error->error_code;
-    xcb_disconnect(conn);
     free(error);
     error = nullptr;
+    xcb_disconnect(conn);
     exit(EXIT_FAILURE);
   }
 }
@@ -586,6 +565,7 @@ void WindowManager::errorHandler(xcb_void_cookie_t cookie,
     LOG(ERROR) << message << " failed. : " << error->error_code;
     free(error);
     error = nullptr;
+    xcb_disconnect(conn);
     exit(EXIT_FAILURE);
   }
 }

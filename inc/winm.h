@@ -17,8 +17,8 @@ namespace x11 {
 class WindowManager {
  public:
   ~WindowManager();
-  static ::std::unique_ptr<WindowManager> getInstance(
-      const ::std::string &display_name = "");
+  static std::unique_ptr<WindowManager> getInstance(
+      const std::string &display_name = "");
 
   WindowManager(WindowManager &&wm) noexcept = delete;
   WindowManager &operator=(WindowManager &&wm) noexcept = delete;
@@ -83,10 +83,10 @@ class WindowManager {
   xcb_connection_t *conn;
   xcb_screen_t *screen;
   const xcb_window_t root;
-  ::std::unordered_map<xcb_window_t, xcb_window_t> clients_;
+  std::unordered_map<xcb_window_t, xcb_window_t> clients_;
 //   const xcb_atom_t WM_DELETE_WINDOW;
-  static ::std::atomic<bool> wm_detected_;
-  static ::std::mutex wm_mutex_;
+  static std::atomic<bool> wm_detected_;
+  static std::mutex wm_mutex_;
   static WindowManager *instance_;
 };
 
