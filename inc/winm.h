@@ -87,7 +87,7 @@ class WindowManager {
   const xcb_atom_t WM_PROTOCOLS;  //窗管协议族这个属性对应的原子
   const xcb_atom_t WM_DELETE_WINDOW;  //窗管关闭窗口协议这个属性对应的原子
   static std::atomic<bool> wm_detected_;
-  // static std::mutex wm_mutex_;
+  static std::mutex wm_mutex_;
   static WindowManager *instance_;
 };
 

@@ -11,7 +11,7 @@
 #### 安装依赖
 
 ```shell
-sudo apt-get install libxcb1-dev xcb-keysyms libxcb-util-dev libxcb-icccm4-dev
+sudo apt-get install libxcb1-dev libxcb-keysyms1-dev libxcb-util0-dev libxcb-icccm4-dev
 ```
 
 #### 运行
@@ -19,6 +19,7 @@ sudo apt-get install libxcb1-dev xcb-keysyms libxcb-util-dev libxcb-icccm4-dev
 ```shell
 ./run.sh
 ```
+![效果](./assets/demo.png)
 
 #### 可供参考的材料
 
