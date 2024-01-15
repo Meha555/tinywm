@@ -24,6 +24,4 @@ target_compile_features(${main_name} PUBLIC c_std_11)
 
 # find_package(glog REQUIRED)
 target_link_libraries(${main_name} PRIVATE glog)
-target_link_libraries(${main_name} PRIVATE xcb)
-target_link_libraries(${main_name} PRIVATE xcb-keysyms)
-target_link_libraries(${main_name} PRIVATE X11)
+target_link_libraries(${main_name} PRIVATE xcb xcb-keysyms xcb-util xcb-icccm X11)

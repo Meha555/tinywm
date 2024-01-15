@@ -47,6 +47,7 @@ class WindowManager {
   void unFrame(xcb_window_t w);
 
   // Callbacks
+  void onClientMessage(xcb_client_message_event_t *ev);
   void onCreateNotify(xcb_create_notify_event_t *ev);
   void onDestroyNotify(xcb_destroy_notify_event_t *ev);
   void onConfigureRequest(xcb_configure_request_event_t *ev);
@@ -72,7 +73,6 @@ class WindowManager {
                            const char *message) const noexcept;
   inline void errorHandler(xcb_void_cookie_t cookie,
                            const char *message) const noexcept;
-  void onWMDetected(xcb_connection_t *c, xcb_generic_error_t *e);
   // Geometerys
   utils::Position<int16_t> drag_start_pos_;
   utils::Position<int16_t> drag_start_frame_pos_;
@@ -84,9 +84,10 @@ class WindowManager {
   xcb_screen_t *screen;
   const xcb_window_t root;
   std::unordered_map<xcb_window_t, xcb_window_t> clients_;
-//   const xcb_atom_t WM_DELETE_WINDOW;
+  const xcb_atom_t WM_PROTOCOLS;  //窗管协议族这个属性对应的原子
+  const xcb_atom_t WM_DELETE_WINDOW;  //窗管关闭窗口协议这个属性对应的原子
   static std::atomic<bool> wm_detected_;
-  static std::mutex wm_mutex_;
+  // static std::mutex wm_mutex_;
   static WindowManager *instance_;
 };
 

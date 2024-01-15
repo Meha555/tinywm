@@ -1,5 +1,7 @@
 #include "winm.h"
 
+#include <xcb/xcb_aux.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -10,6 +12,7 @@
 extern "C" {
 #include <X11/Xutil.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_icccm.h>
 #include <xcb/xcb_keysyms.h>
 #include <xcb/xproto.h>
 }
@@ -36,7 +39,9 @@ std::unique_ptr<WindowManager> WindowManager::getInstance(
         LOG(ERROR) << "Failed to open X connection ";
         return nullptr;
       }
-      xcb_screen_t *s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+      // xcb_screen_t *s = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+      xcb_screen_t *s = xcb_aux_get_screen(
+          c, NULL);  // we can just use xcb auxiliary function to do above stuff
       instance_ = new WindowManager(c, s);
     }
   }
@@ -44,7 +49,31 @@ std::unique_ptr<WindowManager> WindowManager::getInstance(
 }
 
 WindowManager::WindowManager(xcb_connection_t *c, xcb_screen_t *s)
-    : conn(c), screen(s), root(s->root) {}
+    : conn(c),
+      screen(s),
+      root(s->root),
+      /*设置WM_PROTOCOLS协议族，并设置支持其中的WM_DELETE_WINDOW协议*/
+      WM_PROTOCOLS([this] {
+        auto res = xcb_intern_atom_reply(
+            conn,
+            xcb_intern_atom(conn, 0, strlen("WM_PROTOCOLS"),
+                            "WM_PROTOCOLS"), /*不存在就创建*/
+            NULL);
+        auto ret = res->atom;
+        free(res);
+        return ret;
+      }()),
+      WM_DELETE_WINDOW([this] {
+        auto res = xcb_intern_atom_reply(
+            conn,
+            xcb_intern_atom(conn, 0,
+                            strlen("WM_DELETE_WINDOW"), /*不存在就创建*/
+                            "WM_DELETE_WINDOW"),
+            NULL);
+        auto ret = res->atom;
+        free(res);
+        return ret;
+      }()) {}
 
 WindowManager::~WindowManager() { xcb_disconnect(conn); }
 
@@ -87,6 +116,10 @@ void WindowManager::run() {
   xcb_generic_event_t *event;
   while ((event = xcb_wait_for_event(conn))) {
     switch (event->response_type & ~0x80) {
+      case XCB_CLIENT_MESSAGE: {
+        onClientMessage((xcb_client_message_event_t *)event);
+        break;
+      }
       case XCB_CREATE_NOTIFY: {
         onCreateNotify((xcb_create_notify_event_t *)event);
         break;
@@ -155,7 +188,10 @@ void WindowManager::run() {
         onKeyRelease((xcb_key_release_event_t *)event);
         break;
       }
-      case XCB_MOTION_NOTIFY: {  // Skip any already pending motion events.
+      case XCB_MOTION_NOTIFY: {
+        // Skip any already pending motion events, we only need the newest one.
+        while ((event = xcb_poll_for_queued_event(conn)))
+          if (event->response_type == XCB_MOTION_NOTIFY) free(event);
         onMotionNotify((xcb_motion_notify_event_t *)event);
         break;
       }
@@ -202,8 +238,8 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   values[2] =
       // XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
       XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
-      XCB_EVENT_MASK_EXPOSURE | 
-      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+      XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+      XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
   errorHandler(xcb_create_window_checked(
                    conn, result_geo->depth, frame, root, result_geo->x,
                    result_geo->y, result_geo->width, result_geo->height,
@@ -285,6 +321,25 @@ void WindowManager::unFrame(xcb_window_t w) {
   LOG(INFO) << "Unframed window " << w << " [" << clients_[w] << "]";
 }
 
+void WindowManager::onClientMessage(xcb_client_message_event_t *ev) {
+  void *message = nullptr;
+  switch (ev->format) {
+    case 8:
+      message = ev->data.data8;
+      break;
+    case 16:
+      message = ev->data.data16;
+      break;
+    case 32:
+      message = ev->data.data32;
+      break;
+    default:
+      const char *(message) = "DATA ERROR!";
+  }
+  LOG(WARNING) << "WM got a ClientMessage from " << ev->window
+               << ", content is " << ev->type << " : " << message;
+}
+
 void WindowManager::onCreateNotify(xcb_create_notify_event_t *ev) {}
 
 void WindowManager::onDestroyNotify(xcb_destroy_notify_event_t *ev) {}
@@ -310,10 +365,6 @@ void WindowManager::onReparentNotify(xcb_reparent_notify_event_t *ev) {}
 
 void WindowManager::onExpose(xcb_expose_event_t *ev) {
   xcb_generic_error_t *error = nullptr;
-  // xcb_intern_atom_reply_t *result_atom = xcb_intern_atom_reply(
-  //     conn,
-  //     xcb_intern_atom(conn, 1, strlen("XCB_ATOM_WM_NAME"),
-  //     "XCB_ATOM_WM_NAME"), &error);
   xcb_get_property_reply_t *result_prop = xcb_get_property_reply(
       conn,
       xcb_get_property(conn, 0, ev->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING,
@@ -323,23 +374,26 @@ void WindowManager::onExpose(xcb_expose_event_t *ev) {
   const char *text = nullptr;
   // free(result_atom);
   free(result_prop);
-  if(!clients_.count(ev->window)) {
+  if (!clients_.count(ev->window)) {
     text = static_cast<const char *>(xcb_get_property_value(result_prop));
     button_draw(conn, screen, ev->window, (ev->width - 7 * strlen(text)) / 2,
                 (ev->height - 16) / 2, text);
-    LOG(WARNING) << text ;
+    LOG(WARNING) << text;
     text = "Press ESC key to exit...";
     text_draw(conn, screen, ev->window, 10, ev->height - 10, text);
-    // text_draw(conn, screen, clients_[ev->window], (ev->x + ev->width) >> 1, (ev->y + ev->height) >> 1, text);
-    xcb_rectangle_t btn = {(ev->x + ev->width) >> 1, (ev->y + ev->height) >> 1, 15, 15};//ev->x + 2 ev->y + ev->ev->width - 8
-            xcb_poly_fill_rectangle(conn, ev->window, xcb_generate_id(conn), 1, &btn);
-    LOG(WARNING) << text ;
+    // text_draw(conn, screen, clients_[ev->window], (ev->x + ev->width) >> 1,
+    // (ev->y + ev->height) >> 1, text);
+    xcb_rectangle_t btn = {static_cast<int16_t>((ev->x + ev->width) >> 1),
+                           static_cast<int16_t>((ev->y + ev->height) >> 1), 15,
+                           15};  // ev->x + 2 ev->y + ev->ev->width - 8
+    xcb_poly_fill_rectangle(conn, ev->window, xcb_generate_id(conn), 1, &btn);
+    LOG(WARNING) << text;
     xcb_flush(conn);
   }
   printf(
       "Window %u [%s] exposed. Region to be redrawn at location "
-      "(%d,%d), with dimension (%d,%d)\n", ev->window, text,
-       ev->x, ev->y, ev->width, ev->height);
+      "(%d,%d), with dimension (%d,%d)\n",
+      ev->window, text, ev->x, ev->y, ev->width, ev->height);
 }
 
 void WindowManager::onConfigureRequest(xcb_configure_request_event_t *ev) {
@@ -517,16 +571,6 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
 void WindowManager::onEnterNotify(xcb_enter_notify_event_t *ev) {
   printf("Mouse entered window %u, at coordinates (%d,%d)\n", ev->event,
          ev->event_x, ev->event_y);
-  // static int is_hand = 0;
-  // if ((ev->event_x >= (ev->width - 7 * length) / 2) &&
-  //     (ev->event_x <=
-  //       ((ev->width - 7 * length) / 2 + 7 * length + 6)) &&
-  //     (ev->event_y >= (ev->height - 16) / 2 - 19) &&
-  //     (ev->event_y <= ((ev->height - 16) / 2)))
-      // is_hand = 1 - is_hand;
-
-  // is_hand ? cursor_set(conn, screen, ev->window, 58)
-  //         : cursor_set(conn, screen, ev->window, 68);
   cursor_set(conn, screen, ev->event, 58);
 }
 
@@ -540,32 +584,62 @@ void WindowManager::onKeyPress(xcb_key_press_event_t *ev) {
   printf("Key pressed in window %u, ", ev->event);
   print_modifiers(ev->state);
 
-  // alt + f4: Close window.
+  // ESC: Close window.
   xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(conn);
   xcb_keysym_t keysym = xcb_key_symbols_get_keysym(symbols, ev->detail, 0);
   // After elimate the target window, the next window in the stacking order
   // should get focus.
-  if (ev->detail == XCB_MOD_MASK_CONTROL) {
-    // 1. Find next window.
-    auto i = clients_.find(ev->child);
-    CHECK(i != clients_.end());
-    ++i;  // Get next iterator of current window
-    if (i == clients_.end()) i = clients_.begin();
-    // 2. Raise and set focus.
-    errorHandler(xcb_configure_window_checked(
-                     conn, ev->child, XCB_CONFIG_WINDOW_STACK_MODE,
-                     (const uint32_t[]){XCB_STACK_MODE_ABOVE}),
-                 "raise to top");
-    errorHandler(xcb_set_input_focus_checked(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
-                                             i->first, XCB_CURRENT_TIME),
-                 "set input focus");
-  }
+  if (ev->detail == static_cast<xcb_keycode_t>(KeyMap::ESC)) {
+    xcb_icccm_get_wm_protocols_reply_t protocols_reply;
+    if (xcb_icccm_get_wm_protocols_reply(
+            conn, xcb_icccm_get_wm_protocols(conn, ev->child, WM_DELETE_WINDOW),
+            &protocols_reply, NULL)) {
+      if (std::find(protocols_reply.atoms,
+                    protocols_reply.atoms + protocols_reply.atoms_len,
+                    WM_DELETE_WINDOW) !=
+          protocols_reply.atoms + protocols_reply.atoms_len) {
+        LOG(INFO) << "Send message to deleting window " << ev->child;
 
-  // // TODO - 实现通过属性和原子来让窗管控制窗口关闭的逻辑
-  // if (ev->detail == static_cast<uint16_t>(KeyMap::ESC)) {
-  //   errorHandler(xcb_destroy_window_checked(conn, ev->event), "destroy
-  //   window"); free(ev); xcb_disconnect(conn);
-  // }
+        xcb_client_message_event_t msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.response_type = XCB_CLIENT_MESSAGE;
+        msg.window = ev->child;
+        msg.type = XCB_ATOM_STRING;
+        msg.format = 32;
+        msg.data.data32[0] = WM_DELETE_WINDOW;
+
+        errorHandler(
+            xcb_send_event_checked(conn, false, ev->child,
+                                   XCB_EVENT_MASK_NO_EVENT, (const char *)&msg),
+            "send window delete message");
+
+        xcb_flush(conn);
+
+        xcb_icccm_get_wm_protocols_reply_wipe(&protocols_reply);
+      } else {
+        // Just kill window by force.
+        LOG(INFO) << "Killing window " << ev->child;
+        xcb_kill_client(conn, ev->child);
+        xcb_flush(conn);
+      }
+    }
+  } else if (ev->detail == XCB_MOD_MASK_CONTROL) {
+    // Ctrl: Switch window.
+    // (Assuming clients_ is a std::map or similar container)
+    auto i = clients_.find(ev->child);
+    if (i != clients_.end()) {
+      ++i;
+      if (i == clients_.end()) i = clients_.begin();
+
+      // Raise and set focus
+      xcb_change_window_attributes(conn, i->second, XCB_STACK_MODE_ABOVE,
+                                   (const uint32_t[]){XCB_STACK_MODE_ABOVE});
+      xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, i->first,
+                          XCB_CURRENT_TIME);
+
+      xcb_flush(conn);
+    }
+  }
 }
 
 void WindowManager::errorHandler(xcb_generic_error_t *error,
