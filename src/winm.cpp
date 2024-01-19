@@ -78,20 +78,19 @@ WindowManager::WindowManager(xcb_connection_t *c, xcb_screen_t *s)
 WindowManager::~WindowManager() { xcb_disconnect(conn); }
 
 void WindowManager::run() {
-  // REVIEW - 为什么需要加锁？？
-  //   wm_detected_.store(false);
+  wm_mutex_.lock();
+  // Register SubstructureRedirection on Root Window
   errorHandler(xcb_change_window_attributes_checked(
                    conn, root, XCB_CW_EVENT_MASK,
                    (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
                                       XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY}),
                "WM register substructure redirection on root window");
-  xcb_flush(conn);
-  //   if (wm_detected_.load()) {
-  //     LOG(ERROR) << "Detected another window manager on connection";
-  //     return;
-  //   }
-  // TODO -
-  // 注册错误处理函数(xcb好像没有这个功能)，貌似都是在checked后缀的函数对应的xcb_request_check处理了
+  xcb_flush(conn);  // Flush to X Server
+  if (wm_detected_.load()) {
+    LOG(ERROR) << "Detected another window manager on connection";
+    return;
+  }
+  wm_mutex_.unlock();
 
   errorHandler(xcb_grab_server_checked(conn), "grab X Server");
 
@@ -213,7 +212,7 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   xcb_get_window_attributes_reply_t *result_attr =
       xcb_get_window_attributes_reply(conn, xcb_get_window_attributes(conn, w),
                                       &error);
-
+  errorHandler(error, "get window attributes");
   // Make sure the window is managed by WM, and it must be currently visiable.
   if (created_before &&
       (result_attr->override_redirect == XCB_CW_OVERRIDE_REDIRECT ||
@@ -233,8 +232,6 @@ void WindowManager::addFrame(xcb_window_t w, bool created_before) {
   mask = XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK;
   values[0] = static_cast<uint32_t>(Colors::GREEN);
   values[1] = static_cast<uint32_t>(Colors::GREY);
-  // REVIEW -
-  // 实测frame不能添加事件，否则由于其比client更大一些，导致事件会先经过frame的处理，导致断言失败
   values[2] =
       // XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE |
       XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_LEAVE_WINDOW |
@@ -324,19 +321,12 @@ void WindowManager::unFrame(xcb_window_t w) {
 void WindowManager::onClientMessage(xcb_client_message_event_t *ev) {
   void *message = nullptr;
   switch (ev->format) {
-    case 8:
-      message = ev->data.data8;
-      break;
-    case 16:
-      message = ev->data.data16;
-      break;
-    case 32:
-      message = ev->data.data32;
-      break;
-    default:
-      const char *(message) = "DATA ERROR!";
+    case 8: message = ev->data.data8; break;
+    case 16: message = ev->data.data16; break;
+    case 32: message = ev->data.data32; break;
+    default: const char *(message) = "DATA ERROR!";
   }
-  LOG(WARNING) << "WM got a ClientMessage from " << ev->window
+  LOG(WARNING) << "WM listen a ClientMessage from " << ev->window
                << ", content is " << ev->type << " : " << message;
 }
 
@@ -472,7 +462,7 @@ void WindowManager::onButtonPress(xcb_button_press_event_t *ev) {
   CHECK(clients_.count(ev->child));
   // 1. Store current window position and geometry.
   // NOTE - The coordinates must be global!
-  drag_start_frame_pos_ = Position<int16_t>(ev->event_x, ev->event_y);
+  drag_start_pos_ = Position<int16_t>(ev->event_x, ev->event_y);
   xcb_generic_error_t *error = nullptr;
   xcb_get_geometry_cookie_t cookie_geo = xcb_get_geometry(conn, ev->event);
   xcb_get_geometry_reply_t *result_geo =
@@ -523,8 +513,7 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
     LOG(WARNING) << ele.first << " : " << ele.second << std::endl;
   LOG(INFO) << ev->root << " | " << ev->event << " | " << ev->child;
   CHECK(clients_.count(
-      ev->child));  // FIXME -
-                    // 问题，鼠标经过窗口，应该是先经过外部的frame吧。因此这里ev->event是外框，ev->child是孩子
+      ev->child));  // FIXME - 问题，鼠标经过窗口，应该是先经过外部的frame吧。因此这里ev->event是外框，ev->child是孩子
   // 1. Move the frame first.
   xcb_generic_error_t *error;
   xcb_query_tree_reply_t *result_tree =
@@ -533,7 +522,8 @@ void WindowManager::onMotionNotify(xcb_motion_notify_event_t *ev) {
   const Position<int16_t> drag_pos(ev->root_x, ev->root_y);
   const Vector2D<int16_t> delta = drag_pos - drag_start_pos_;
   // 3. Check the pressed keys.
-  // Move the frame, so its children will follow it.
+  // Move the frame, so its children should be moved(the children won't move automatically,
+  // I just didn't write relavent code here).
   if (ev->state & XCB_BUTTON_MASK_1) {
     LOG(INFO) << "Alt+Mouse Left Click pressed";
     const Position<int16_t> dest_frame_pos = drag_start_frame_pos_ + delta;
