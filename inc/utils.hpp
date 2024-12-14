@@ -6,14 +6,24 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <memory>
 
 // Declarations
 namespace utils
 {
 
-template<typename T = int16_t>
-struct Size
+struct CDeleter
 {
+    template<typename T>
+    void operator()(T *ptr) {
+        if (ptr) free(ptr);
+    }
+};
+template<typename T>
+using UniqueCPtr = std::unique_ptr<T, CDeleter>;
+
+template <typename T = int16_t> struct Size {
     T width, height;
     Size() = default;
     Size(T w, T h)
