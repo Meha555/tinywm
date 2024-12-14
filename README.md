@@ -2,17 +2,16 @@
 
 #### 介绍
 
-使用xcb写的X11简易窗口管理器。
+仿照basic_wm，使用xcb写的X11简易窗口管理器。
 
-目前完成度80%左右，键盘那块我没弄了，没找到xcb到底提供哪些关于键盘和鼠标的API和掩码和码值映射。
+目前完成度80%左右，键盘那块我没弄了，没弄明白xcb提供哪些关于键盘和鼠标的API和掩码。
 
 目前代码是同步的，如果要改成异步的，应该是将所有 `errorHandler()` 部分改成不带 `_checked()` 后缀的API，然后在事件循环中添加 `errorHandler()` 的逻辑。
 
 #### 安装依赖
 
 ```shell
-sudo apt install build-essential libx11-dev libgoogle-glog-dev xserver-xephyr xinit x11-apps xterm
-sudo apt install libxcb1-dev libxcb-keysyms1-dev libxcb-util0-dev libxcb-icccm4-dev
+sudo apt-get install libxcb1-dev libxcb-keysyms1-dev libxcb-util0-dev libxcb-icccm4-dev
 ```
 
 #### 运行
