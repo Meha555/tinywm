@@ -3,22 +3,19 @@
 
 // this file offer auxiliary functions
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-
 extern "C" {
 #include <xcb/xcb.h>
 #include <xcb/xcb_aux.h>
 }
 
-namespace x11 {
+namespace x11
+{
 enum class KeyMap { ESC = 9 };
 enum class Colors : unsigned long {
-  BLUE = 0x0000ff,   // 蓝色
-  RED = 0xff0000,    // 黄色
-  GREY = 0x7f7f7f,   // 灰色
-  GREEN = 0xa0e93a,  // 绿色
+    BLUE = 0x0000ff, // 蓝色
+    RED = 0xff0000, // 黄色
+    GREY = 0x7f7f7f, // 灰色
+    GREEN = 0xa0e93a, // 绿色
 };
 
 void print_modifiers(uint32_t mask);
@@ -32,6 +29,6 @@ void cursor_set(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t window,
                 int cursor_id);
 uint32_t transRGB(uint32_t red, uint32_t green, uint32_t blue, uint32_t alpha);
 
-}  // namespace x11
+} // namespace x11
 
-#endif  // AUX_H
+#endif // AUX_H
