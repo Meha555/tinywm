@@ -1,7 +1,6 @@
 #include "aux.h"
 
 #include <xcb/xproto.h>
-
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -154,8 +153,7 @@ void button_draw(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t window,
         exit(EXIT_FAILURE);
     }
 }
-void cursor_set(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t window,
-                int cursor_id)
+void cursor_set(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t window, CursorGlyph cursor_id)
 {
     uint32_t values_list[3];
     xcb_void_cookie_t cookie_font;
@@ -177,7 +175,7 @@ void cursor_set(xcb_connection_t *c, xcb_screen_t *screen, xcb_window_t window,
     }
 
     cursor = xcb_generate_id(c);
-    xcb_create_glyph_cursor(c, cursor, font, font, cursor_id, cursor_id + 1, 0, 0,
+    xcb_create_glyph_cursor(c, cursor, font, font, static_cast<uint16_t>(cursor_id), static_cast<uint16_t>(cursor_id) + 1, 0, 0,
                             0, 0, 0, 0);
 
     gc = xcb_generate_id(c);

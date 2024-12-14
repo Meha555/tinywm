@@ -11,6 +11,7 @@ extern "C" {
 #include <unordered_map>
 
 #include "utils.hpp"
+#include "xcb.hpp"
 
 namespace x11
 {
@@ -19,8 +20,7 @@ class WindowManager
 {
 public:
     ~WindowManager();
-    static std::unique_ptr<WindowManager> getInstance(
-        const std::string &display_name = "");
+    static WindowManager* instance(const std::string &display_name = "");
 
     WindowManager(WindowManager &&wm) noexcept = delete;
     WindowManager &operator=(WindowManager &&wm) noexcept = delete;
@@ -33,18 +33,16 @@ public:
 
 private:
     explicit WindowManager(xcb_connection_t *c, xcb_screen_t *s);
-    // Reparenting/Framing
+
     /***
      * @description: Frame a window
      * @param {xcb_window_t} window to be framed
      * @param {bool} does the window was created before wm
-     * @return {*}
      */
     void addFrame(xcb_window_t w, bool created_before);
     /***
      * @description: UnFrame a window
      * @param {xcb_window_t} window to be framed
-     * @return {*}
      */
     void unFrame(xcb_window_t w);
 
@@ -71,26 +69,18 @@ private:
     void onKeyPress(xcb_key_press_event_t *ev);
     void onKeyRelease(xcb_key_release_event_t *ev);
 
-    inline void errorHandler(xcb_generic_error_t *error,
-                             const char *message) const noexcept;
-    inline void errorHandler(xcb_void_cookie_t cookie,
-                             const char *message) const noexcept;
-    // Geometerys
-    utils::Position<int16_t> drag_start_pos_;
-    utils::Position<int16_t> drag_start_frame_pos_;
-    utils::Size<int16_t> drag_start_frame_size_;
+    // Geometorys
+    utils::Position<int16_t> m_drag_start_pos;
+    utils::Position<int16_t> m_drag_start_frame_pos;
+    utils::Size<int16_t> m_drag_start_frame_size;
 
     // Attributes
     // const xcb_atom_t XCB_PROPERTY_DELETE;
-    xcb_connection_t *conn;
-    xcb_screen_t *screen;
-    const xcb_window_t root;
-    std::unordered_map<xcb_window_t, xcb_window_t> clients_;
-    const xcb_atom_t WM_PROTOCOLS; // 窗管协议族这个属性对应的原子
-    const xcb_atom_t WM_DELETE_WINDOW; // 窗管关闭窗口协议这个属性对应的原子
-    static std::atomic<bool> wm_detected_;
-    static std::mutex wm_mutex_;
-    static WindowManager *instance_;
+    xcb_connection_t *m_connection;
+    xcb_screen_t *m_screen;
+    const xcb_window_t m_root;
+    std::unordered_map<xcb_window_t, xcb_window_t> m_clients; // <w,f>
+    static WindowManager *m_instance;
 };
 
 } // namespace x11
