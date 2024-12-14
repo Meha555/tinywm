@@ -7,10 +7,9 @@ project(
 	VERSION 0.1.0
 )
 
-option(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(CMAKE_EXPORT_COMPILE_CONMANDS ON)
 
 set(main_name tinywm)
-set(CMAKE_BUILD_TYPE Debug)
 
 file(GLOB_RECURSE main_headers inc/*.h inc/*.hpp)
 aux_source_directory(src main_src)
