@@ -2,7 +2,7 @@
 #include <glog/logging.h>
 #include "inc/winm.h"
 
-inline void errorStackPrinter(const char *str, int size) {
+inline void errorStackPrinter(const char *str, size_t size) {
     LOG(ERROR) << ::std::string(str, size);
 }
 
